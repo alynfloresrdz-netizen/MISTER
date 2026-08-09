@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cotizador y Recibos</title>
+    <!-- Librería para generar el PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        .container { display: flex; gap: 20px; max-width: 1200px; margin: 0 auto; flex-wrap: wrap; }
+        
+        /* Panel Izquierdo: Catálogo */
+        .catalogo { flex: 2; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); min-width: 300px; }
+        .filtros { margin-bottom: 20px; }
+        select, button { padding: 10px; border-radius: 5px; border: 1px solid #ccc; font-size: 16px; }
+        .grid-productos { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; }
+        .producto { border: 1px solid #eee; padding: 15px; border-radius: 8px; text-align: center; background: #fafafa; }
+        .producto h3 { margin: 0 0 10px 0; font-size: 16px; color: #2c3e50; }
+        .producto p { font-weight: bold; color: #27ae60; font-size: 18px; margin: 10px 0; }
+        .btn-agregar { background: #3498db; color: white; border: none; cursor: pointer; width: 100%; transition: 0.3s; }
+        .btn-agregar:hover { background: #2980b9; }
+
+        /* Panel Derecho: Recibo / Carrito */
+        .panel-recibo { flex: 1; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); min-width: 300px; display: flex; flex-direction: column; }
+        #zona-pdf { padding: 20px; border: 1px solid #eee; border-radius: 5px; margin-bottom: 20px; background: white; }
+        .tabla-recibo { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .tabla-recibo th, .tabla-recibo td { border-bottom: 1px solid #ddd; padding: 10px; text-align: left; }
+        .tabla-recibo th { background-color: #f8f9fa; }
+        .total-row { font-weight: bold; font-size: 18px; }
+        .btn-descargar { background: #2ecc71; color: white; border: none; cursor: pointer; width: 100%; padding: 15px; font-weight: bold; font-size: 16px; margin-top: auto; }
+        .btn-descargar:hover { background: #27ae60; }
+        .btn-eliminar { background: #e74c3c; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 12px; }
+        
+        /* Ocultar botones de eliminar al imprimir el PDF */
+        .ocultar-en-pdf { display: inline-block; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- SECCIÓN DE PRODUCTOS -->
+    <div class="catalogo">
+        <h2>Catálogo de Artículos</h2>
+        <div class="filtros">
+            <label for="filtro-categoria">Buscar por Categoría: </label>
+            <select id="filtro-categoria" onchange="filtrarProductos()">
+                <option value="Todas">Todas las categorías</option>
+                <!-- Las categorías se cargarán aquí automáticamente -->
+            </select>
+        </div>
+        <div class="grid-productos" id="lista-productos">
+            <!-- Los productos aparecerán aquí -->
+        </div>
+    </div>
+
+    <!-- SECCIÓN DE RECIBO -->
+    <div class="panel-recibo">
+        <div id="zona-pdf">
+            <h2 style="text-align: center; margin-top: 0;">Recibo de Compra</h2>
+            <p id="fecha-recibo" style="text-align: center; color: #7f8c8d; font-size: 14px;"></p>
+            
+            <table class="tabla-recibo">
+                <thead>
+                    <tr>
+                        <th>Cant.</th>
+                        <th>Descripción</th>
+                        <th>Precio</th>
+                        <th class="col-eliminar">Acción</th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpo-recibo">
+                    <!-- Los items seleccionados aparecerán aquí -->
+                </tbody>
+                <tfoot>
+                    <tr class="total-row">
+                        <td colspan="2" style="text-align: right;">Total:</td>
+                        <td colspan="2" id="total-recibo">$0.00</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        <button class="btn-descargar" onclick="descargarPDF()">Descargar Recibo en PDF</button>
+    </div>
+</div>
+
+<script>
+    // 1. BASE DE DATOS DE PRECIOS
+    // Aquí puedes agregar, editar o eliminar tus artículos
+    const baseDatos = [
+        { id: 1, nombre: "Jabón Regalo Manzana Canela", categoria: "Jabones Decorativos", precio: 95 },
+        { id: 2, nombre: "Jabón Regalo Esencia Pino", categoria: "Jabones Decorativos", precio: 90 },
+        { id: 3, nombre: "Vela Molde Clásica", categoria: "Velas", precio: 120 },
+        { id: 4, nombre: "Vela Aromática Vainilla", categoria: "Velas", precio: 150 },
+        { id: 5, nombre: "Kit de Regalo Navideño", categoria: "Kits Especiales", precio: 250 },
+        { id: 6, nombre: "Empaque Personalizado", categoria: "Empaques", precio: 30 }
+    ];
+
+    let carrito = [];
+
+    // 2. INICIALIZAR LA PÁGINA
+    window.onload = () => {
+        cargarCategorias();
+        mostrarProductos(baseDatos);
+        document.getElementById('fecha-recibo').innerText = "Fecha: " + new Date().toLocaleDateString();
+    };
+
+    // 3. CARGAR CATEGORÍAS AL MENÚ DESPLEGABLE
+    function cargarCategorias() {
+        const select = document.getElementById('filtro-categoria');
+        const categoriasUnicas = [...new Set(baseDatos.map(item => item.categoria))];
+        
+        categoriasUnicas.forEach(categoria => {
+            let option = document.createElement('option');
+            option.value = categoria;
+            option.innerText = categoria;
+            select.appendChild(option);
+        });
+    }
+
+    // 4. MOSTRAR PRODUCTOS EN PANTALLA
+    function mostrarProductos(productos) {
+        const contenedor = document.getElementById('lista-productos');
+        contenedor.innerHTML = ''; 
+
+        productos.forEach(prod => {
+            contenedor.innerHTML += `
+                <div class="producto">
+                    <h3>${prod.nombre}</h3>
+                    <p>$${prod.precio.toFixed(2)}</p>
+                    <button class="btn-agregar" onclick="agregarAlCarrito(${prod.id})">Agregar</button>
+                </div>
+            `;
+        });
+    }
+
+    // 5. FILTRAR POR CATEGORÍA
+    function filtrarProductos() {
+        const categoriaSeleccionada = document.getElementById('filtro-categoria').value;
+        if (categoriaSeleccionada === "Todas") {
+            mostrarProductos(baseDatos);
+        } else {
+            const filtrados = baseDatos.filter(prod => prod.categoria === categoriaSeleccionada);
+            mostrarProductos(filtrados);
+        }
+    }
+
+    // 6. LÓGICA DEL CARRITO / RECIBO
+    function agregarAlCarrito(id) {
+        const producto = baseDatos.find(p => p.id === id);
+        const itemEnCarrito = carrito.find(item => item.id === id);
+
+        if (itemEnCarrito) {
+            itemEnCarrito.cantidad++;
+        } else {
+            carrito.push({ ...producto, cantidad: 1 });
+        }
+        actualizarRecibo();
+    }
+
+    function eliminarDelCarrito(id) {
+        carrito = carrito.filter(item => item.id !== id);
+        actualizarRecibo();
+    }
+
+    function actualizarRecibo() {
+        const cuerpo = document.getElementById('cuerpo-recibo');
+        cuerpo.innerHTML = '';
+        let total = 0;
+
+        carrito.forEach(item => {
+            const subtotal = item.precio * item.cantidad;
+            total += subtotal;
+            cuerpo.innerHTML += `
+                <tr>
+                    <td>${item.cantidad}</td>
+                    <td>${item.nombre}</td>
+                    <td>$${subtotal.toFixed(2)}</td>
+                    <td class="col-eliminar">
+                        <button class="btn-eliminar" onclick="eliminarDelCarrito(${item.id})">X</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        document.getElementById('total-recibo').innerText = `$${total.toFixed(2)}`;
+    }
+
+    // 7. GENERAR EL PDF
+    function descargarPDF() {
+        if (carrito.length === 0) {
+            alert("Agrega artículos antes de generar el recibo.");
+            return;
+        }
+
+        // Ocultar la columna de "Eliminar" antes de tomar la foto para el PDF
+        const elementosAEliminar = document.querySelectorAll('.col-eliminar');
+        elementosAEliminar.forEach(el => el.style.display = 'none');
+
+        const elementoParaPDF = document.getElementById('zona-pdf');
+        
+        const opciones = {
+            margin:       1,
+            filename:     'Recibo_Desglosado.pdf',
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2 },
+            jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+        };
+
+        // Generar y descargar
+        html2pdf().set(opciones).from(elementoParaPDF).save().then(() => {
+            // Volver a mostrar la columna de "Eliminar" después de descargar
+            elementosAEliminar.forEach(el => el.style.display = '');
+        });
+    }
+</script>
+</body>
+</html>
