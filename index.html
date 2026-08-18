@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mister Alimentos - Cotizador y Tickets</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        :root {
+            --primary: #2c5e3b;
+            --secondary: #d4a373;
+            --bg-color: #f9f6f0;
+            --card-bg: #ffffff;
+            --text-color: #333333;
+        }
+        body { font-family: 'Poppins', sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        header { text-align: center; margin-bottom: 30px; }
+        header h1 { color: var(--primary); margin-bottom: 5px; }
+        
+        .layout { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+        @media(max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+        .card { background: var(--card-bg); padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        
+        .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 20px; }
+        .filters input, .filters select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+
+        .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; max-height: 600px; overflow-y: auto; padding-right: 5px; }
+        .product-item { background: #fff; border: 1px solid #eee; padding: 12px; border-radius: 8px; display: flex; flex-direction: column; justify-content: space-between; }
+        .product-item h4 { font-size: 0.9rem; margin: 0 0 5px 0; }
+        .product-item p { font-size: 0.75rem; color: #777; margin: 0 0 10px 0; }
+        
+        .btn-add { background: var(--primary); color: white; border: none; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-weight: 500; }
+        .btn-add:hover { background: #1f4227; }
+
+        table.cart-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 15px; }
+        table.cart-table th, table.cart-table td { border-bottom: 1px solid #eee; padding: 6px; text-align: left; }
+        
+        .checkout-section label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 5px; color: var(--primary); }
+        .checkout-section select { width: 100%; padding: 8px; margin-bottom: 15px; border-radius: 6px; border: 1px solid #ddd; }
+        .btn-checkout { width: 100%; background: var(--secondary); color: #fff; border: none; padding: 10px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+        .btn-checkout:hover { a background: #bc8a5b; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Mister Alimentos</h1>
+        <p>Sistema de Cotización y Generación de Tickets</p>
+    </header>
+
+    <div class="layout">
+        <div class="card">
+            <h3>Catálogo de Productos</h3>
+            <div class="filters">
+                <input type="text" id="filtroNombre" placeholder="Buscar producto..." oninput="filtrar()">
+                <select id="filtroCat" onchange="filtrar()">
+                    <option value="">Todas las categorías</option>
+                    <option value="MATCHA">Matcha</option>
+                    <option value="GOURMET">Gourmet</option>
+                    <option value="NATURAL">Natural</option>
+                    <option value="FIT">Fit</option>
+                    <option value="UNTABLE">Untable</option>
+                    <option value="SWEET">Sweet</option>
+                    <option value="ALIMENTOS">Alimentos</option>
+                </select>
+                <input type="text" id="filtroId" placeholder="Filtrar por ID..." oninput="filtrar()">
+            </div>
+            
+            <div id="productGrid" class="product-grid"></div>
+        </div>
+
+        <div>
+            <div class="card">
+                <h3>Ticket Actual</h3>
+                <table class="cart-table">
+                    <thead>
+                        <tr>
+                            <th>ID / Prod</th>
+                            <th>Cant</th>
+                            <th>Subtotal</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cartTableBody">
+                        <tr><td colspan="3" style="text-align: center; color: #777;">Sin productos agregados</td></tr>
+                    </tbody>
+                </table>
+                <div style="text-align: right; font-weight: bold; margin-bottom: 15px;">
+                    Total: $<span id="cartTotal">0.00</span>
+                </div>
+
+                <div class="checkout-section">
+                    <label for="metodoPago">Método de Pago:</label>
+                    <select id="metodoPago">
+                        <option value="Efectivo">Efectivo</option>
+                        <option value="Tarjeta">Tarjeta</option>
+                        <option value="Transferencia">Transferencia</option>
+                    </select>
+
+                    <button class="btn-checkout" onclick="descargarTicketPDF()">Generar y Descargar Ticket PDF</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Base de datos de ejemplo basada en tu archivo CSV (puedes agregar todos tus registros aquí)
+    const productos = [
+        { id: "MAT-PIS-001", cat: "MATCHA", nombre: "Pistache c/ Chocolate Blanco & Matcha 250g", p1: 160, p10: 150, p20: 140, p30: 130, p40: 120 },
+        { id: "MAT-ALM-003", cat: "MATCHA", nombre: "Almendra chocolate blanco y matcha 1k", p1: 400, p10: 375, p20: 350, p30: 325, p40: 300 },
+        { id: "GOU-MR -020", cat: "GOURMET", nombre: "Mr Dots 250g", p1: 80, p10: 75, p20: 70, p30: 65, p40: 60 },
+        { id: "NAT-ALM-063", cat: "NATURAL", nombre: "Almendra entera 1kg", p1: 304, p10: 285, p20: 266, p30: 247, p40: 228 },
+        { id: "FIT-PRO-112", cat: "FIT", nombre: "Proteína en polvo Zafiro 500g", p1: 320, p10: 300, p20: 280, p30: 260, p40: 240 },
+        { id: "UNT-UNT-115", cat: "UNTABLE", nombre: "Untable de cacahuate 320g", p1: 88, p10: 82.5, p20: 77, p30: 71.5, p40: 66 },
+        { id: "SWE-GOM-126", cat: "SWEET", nombre: "Gomitas enchiladas 50g", p1: 16, p10: 15, p20: 14, p30: 13, p40: 12 },
+        { id: "ALI-PAP-144", cat: "ALIMENTOS", nombre: "Papa sal de mar 400g", p1: 80, p10: 75, p20: 70, p30: 65, p40: 60 }
+    ];
+
+    let carrito = [];
+
+    function renderCatalogo(lista) {
+        const grid = document.getElementById('productGrid');
+        grid.innerHTML = '';
+        lista.forEach(p => {
+            grid.innerHTML += `
+                <div class="product-item">
+                    <div>
+                        <span style="font-size:0.65rem; background:#eee; padding:2px 5px; border-radius:4px;">${p.id}</span>
+                        <h4>${p.nombre}</h4>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
+                        <span style="font-size:0.8rem; font-weight:600;">$${p.p1}</span>
+                        <button class="btn-add" onclick="agregarAlCarrito('${p.id}')">+ Agregar</button>
+                    </div>
+                </div>
+            `;
+        });
+    }
+
+    function filtrar() {
+        const nombre = document.getElementById('filtroNombre').value.toLowerCase();
+        const cat = document.getElementById('filtroCat').value;
+        const id = document.getElementById('filtroId').value.toLowerCase();
+
+        const filtrados = productos.filter(p => 
+            p.nombre.toLowerCase().includes(nombre) &&
+            (cat === "" || p.cat === cat) &&
+            p.id.toLowerCase().includes(id)
+        );
+        renderCatalogo(filtrados);
+    }
+
+    function agregarAlCarrito(id) {
+        const prod = productos.find(p => p.id === id);
+        const index = carrito.findIndex(item => item.id === id);
+        
+        if (index > -1) {
+            carrito[index].cantidad += 1;
+        } else {
+            carrito.push({ ...prod, cantidad: 1 });
+        }
+        renderCarrito();
+    }
+
+    function renderCarrito() {
+        const tbody = document.getElementById('cartTableBody');
+        const totalSpan = document.getElementById('cartTotal');
+        tbody.innerHTML = '';
+
+        if (carrito.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #777;">Sin productos agregados</td></tr>';
+            totalSpan.textContent = '0.00';
+            return;
+        }
+
+        let totalGeneral = 0;
+        carrito.forEach((item, index) => {
+            // Aplicar lógica de precio por mayoreo según cantidad
+            let precioUnit = item.p1;
+            if (item.cantidad >= 40) precioUnit = item.p40;
+            else if (item.cantidad >= 30) precioUnit = item.p30;
+            else if (item.cantidad >= 20) precioUnit = item.p20;
+            else if (item.cantidad >= 10) precioUnit = item.p10;
+
+            const subtotal = precioUnit * item.cantidad;
+            totalGeneral += subtotal;
+
+            tbody.innerHTML += `
+                <tr>
+                    <td><b>${item.id}</b><br><span style="font-size:0.7rem;">${item.nombre}</span></td>
+                    <td>
+                        <input type="number" min="1" value="${item.cantidad}" style="width:40px;" onchange="cambiarCantidad(${index}, this.value)">
+                    </td>
+                    <td>$${subtotal.toFixed(2)}</td>
+                </tr>
+            `;
+        });
+        totalSpan.textContent = totalGeneral.toFixed(2);
+    }
+
+    function cambiarCantidad(index, val) {
+        const nuevaCant = parseInt(val);
+        if (nuevaCant <= 0) {
+            carrito.splice(index, 1);
+        } else {
+            carrito[index].cantidad = nuevaCant;
+        }
+        renderCarrito();
+    }
+
+    function descargarTicketPDF() {
+        if (carrito.length === 0) {
+            alert("Agrega productos al carrito antes de generar el ticket.");
+            return;
+        }
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ format: [80, 150] }); // Formato térmico compacto
+
+        const fecha = new Date().toLocaleDateString();
+        const metodoPago = document.getElementById('metodoPago').value;
+
+        // Encabezado del Ticket
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.text("MISTER ALIMENTOS", 40, 10, { align: "center" });
+        
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "normal");
+        doc.text(`FECHA: ${fecha}`, 10, 18);
+        doc.text(`TIPO DE PAGO: ${metodoPago}`, 10, 23);
+
+        // Tabla de artículos
+        let rows = [];
+        let totalGeneral = 0;
+
+        carrito.forEach(item => {
+            let precioUnit = item.p1;
+            if (item.cantidad >= 40) precioUnit = item.p40;
+            else if (item.cantidad >= 30) precioUnit = item.p30;
+            else if (item.cantidad >= 20) precioUnit = item.p20;
+            else if (item.cantidad >= 10) precioUnit = item.p10;
+
+            let subtotal = precioUnit * item.cantidad;
+            totalGeneral += subtotal;
+            rows.push([item.id, item.cantidad, `$${subtotal}`]);
+        });
+
+        doc.autoTable({
+            startY: 28,
+            head: [['ID', 'Cant', 'Total']],
+            body: rows,
+            theme: 'plain',
+            styles: { fontSize: 8, cellPadding: 1 },
+            headStyles: { fontStyle: 'bold' }
+        });
+
+        let finalY = doc.lastAutoTable.finalY + 5;
+
+        doc.setFont("helvetica", "bold");
+        doc.text(`TOTAL: $${totalGeneral.toFixed(2)}`, 70, finalY, { align: "right" });
+
+        // Pie de página
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.text("Gracias por tu compra :)", 40, finalY + 10, { align: "center" });
+        doc.text("Para más pedidos manda mensaje a:", 40, finalY + 15, { align: "center" });
+        doc.text("5510498978 / 5525195640", 40, finalY + 19, { align: "center" });
+
+        doc.save("Ticket_Mister_Alimentos.pdf");
+    }
+
+    // Inicializar catálogo al cargar
+    renderCatalogo(productos);
+</script>
+
+</body>
+</html>
